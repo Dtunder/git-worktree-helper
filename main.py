@@ -9,7 +9,22 @@ from typing import List, Dict
 logger = logging.getLogger(__name__)
 
 class JSONFormatter(logging.Formatter):
-    def format(self, record):
+    """
+    Custom logging formatter to output logs as JSON strings.
+    
+    This formatter is useful for structured logging, allowing log aggregation
+    systems to easily parse and index the log entries.
+    """
+    def format(self, record: logging.LogRecord) -> str:
+        """
+        Formats a logging record into a JSON string.
+        
+        Args:
+            record (logging.LogRecord): The log record to format.
+            
+        Returns:
+            str: The JSON-encoded string representation of the log record.
+        """
         log_record = {
             "timestamp": self.formatTime(record, self.datefmt),
             "level": record.levelname,
@@ -20,7 +35,13 @@ class JSONFormatter(logging.Formatter):
             log_record["exc_info"] = self.formatException(record.exc_info)
         return json.dumps(log_record)
 
-def setup_logging():
+def setup_logging() -> None:
+    """
+    Configures the root logger for the application.
+    
+    Sets the logging level to DEBUG and attaches a StreamHandler that writes
+    to sys.stderr. The handler uses the JSONFormatter for structured logging.
+    """
     handler = logging.StreamHandler(sys.stderr)
     handler.setFormatter(JSONFormatter())
     logger.addHandler(handler)
@@ -28,14 +49,22 @@ def setup_logging():
 
 def run_cmd(cmd: List[str], capture_output: bool = True) -> subprocess.CompletedProcess:
     """
-    Executes a shell command via subprocess.
+    Executes a shell command via the subprocess module.
+    
+    This function wraps `subprocess.run` with error handling, logging, and type
+    checking. It captures standard output and standard error by default, and
+    exits the program if the command fails (unless capture_output is False).
     
     Args:
-        cmd: A list of strings representing the command and its arguments.
-        capture_output: Whether to capture standard output and standard error.
+        cmd (List[str]): A list of strings representing the command and its arguments.
+        capture_output (bool, optional): Whether to capture stdout and stderr. Defaults to True.
         
     Returns:
-        A CompletedProcess instance containing the command results.
+        subprocess.CompletedProcess: A CompletedProcess instance containing the command results.
+        
+    Raises:
+        SystemExit: If `cmd` is not a list, if the command is not found, or if the
+                    command fails (non-zero return code) and capture_output is True.
     """
     if not isinstance(cmd, list):
         logger.error("Error: Command must be a list of strings.")
@@ -59,8 +88,15 @@ def list_worktrees(args: argparse.Namespace) -> None:
     """
     Lists git worktrees in a formatted markdown table.
     
+    This function executes `git worktree list --porcelain` and parses the output
+    to extract the path, HEAD commit hash, and branch name for each worktree.
+    It then prints these details in a markdown-compatible table to stdout.
+    
     Args:
-        args: Parsed command-line arguments.
+        args (argparse.Namespace): Parsed command-line arguments.
+        
+    Returns:
+        None
     """
     logger.info("Listing git worktrees")
     result = run_cmd(['git', 'worktree', 'list', '--porcelain'])
@@ -107,8 +143,21 @@ def add_worktree(args: argparse.Namespace) -> None:
     """
     Adds a new git worktree with automatic or specified branch creation.
     
+    If a branch is specified via `args.branch`, it uses that branch. Otherwise,
+    it automatically creates a new branch named after the basename of the target
+    directory (`args.path`).
+    
     Args:
-        args: Parsed command-line arguments.
+        args (argparse.Namespace): Parsed command-line arguments containing:
+            - path (str): The path where the new worktree should be created.
+            - branch (str, optional): The name of the branch to create/checkout.
+            
+    Returns:
+        None
+        
+    Raises:
+        SystemExit: If the path is invalid, the branch is invalid, or if the git
+                    command fails.
     """
     path = args.path
     logger.info(f"Adding worktree at path: {path}")
@@ -142,8 +191,19 @@ def remove_worktree(args: argparse.Namespace) -> None:
     """
     Removes an existing git worktree.
     
+    Executes `git worktree remove` on the specified path. If the force flag
+    is provided, it adds the `--force` option to the command.
+    
     Args:
-        args: Parsed command-line arguments.
+        args (argparse.Namespace): Parsed command-line arguments containing:
+            - path (str): The path of the worktree to remove.
+            - force (bool): Whether to force removal of the worktree.
+            
+    Returns:
+        None
+        
+    Raises:
+        SystemExit: If the path is invalid or the git command fails.
     """
     path = args.path
     logger.info(f"Removing worktree at path: {path}")
@@ -163,8 +223,17 @@ def prune_worktrees(args: argparse.Namespace) -> None:
     """
     Prunes stale git worktrees.
     
+    Executes `git worktree prune` to clean up any worktree definitions in
+    `.git/worktrees` that no longer have corresponding directories on disk.
+    
     Args:
-        args: Parsed command-line arguments.
+        args (argparse.Namespace): Parsed command-line arguments.
+        
+    Returns:
+        None
+        
+    Raises:
+        SystemExit: If the git command fails.
     """
     logger.info("Pruning stale worktrees")
     cmd = ['git', 'worktree', 'prune']
@@ -178,6 +247,13 @@ def prune_worktrees(args: argparse.Namespace) -> None:
 def main() -> None:
     """
     Main entry point for parsing arguments and dispatching commands.
+    
+    Sets up logging and defines the CLI parser using `argparse`. It creates
+    subparsers for the `list`, `add`, `remove`, and `prune` commands, and
+    dispatches execution to the corresponding function based on user input.
+    
+    Returns:
+        None
     """
     setup_logging()
     parser = argparse.ArgumentParser(description="A wrapper for standard git worktree commands.")

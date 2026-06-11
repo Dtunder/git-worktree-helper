@@ -8,12 +8,25 @@ import main
 
 # Helper to create a mock args object
 class MockArgs:
+    """
+    A simple helper class to mock argparse.Namespace objects for testing.
+    """
     def __init__(self, **kwargs):
+        """
+        Initializes the mock object with arbitrary attributes.
+        
+        Args:
+            **kwargs: Arbitrary keyword arguments representing attribute names and values.
+        """
         for k, v in kwargs.items():
             setattr(self, k, v)
 
 @patch('subprocess.run')
 def test_run_cmd_success(mock_run):
+    """
+    Tests that `run_cmd` executes a command successfully and returns a 
+    CompletedProcess instance.
+    """
     mock_result = MagicMock()
     mock_result.returncode = 0
     mock_run.return_value = mock_result
@@ -26,6 +39,10 @@ def test_run_cmd_success(mock_run):
 @patch('sys.exit')
 @patch('subprocess.run')
 def test_run_cmd_failure(mock_run, mock_exit, mock_logger):
+    """
+    Tests that `run_cmd` handles command failures gracefully by logging the error
+    and calling sys.exit.
+    """
     mock_result = MagicMock()
     mock_result.returncode = 1
     mock_result.stderr = "error message"
@@ -38,6 +55,10 @@ def test_run_cmd_failure(mock_run, mock_exit, mock_logger):
 
 @patch('subprocess.run')
 def test_list_worktrees(mock_run, capsys):
+    """
+    Tests that `list_worktrees` parses git worktree list output correctly and
+    formats it as a markdown table.
+    """
     mock_result = MagicMock()
     mock_result.returncode = 0
     mock_result.stdout = """worktree /path/to/repo
@@ -70,6 +91,10 @@ detached
 @patch('sys.exit')
 @patch('subprocess.run')
 def test_add_worktree_with_branch(mock_run, mock_exit):
+    """
+    Tests that `add_worktree` correctly delegates to git when a specific branch
+    is provided.
+    """
     mock_result = MagicMock()
     mock_result.returncode = 0
     mock_run.return_value = mock_result
@@ -83,6 +108,10 @@ def test_add_worktree_with_branch(mock_run, mock_exit):
 @patch('sys.exit')
 @patch('subprocess.run')
 def test_add_worktree_no_branch(mock_run, mock_exit):
+    """
+    Tests that `add_worktree` automatically infers a branch name from the directory
+    path when no branch is explicitly specified.
+    """
     mock_result = MagicMock()
     mock_result.returncode = 0
     mock_run.return_value = mock_result
@@ -96,6 +125,9 @@ def test_add_worktree_no_branch(mock_run, mock_exit):
 @patch('sys.exit')
 @patch('subprocess.run')
 def test_remove_worktree(mock_run, mock_exit):
+    """
+    Tests that `remove_worktree` executes git worktree remove on the specified path.
+    """
     mock_result = MagicMock()
     mock_result.returncode = 0
     mock_run.return_value = mock_result
@@ -109,6 +141,9 @@ def test_remove_worktree(mock_run, mock_exit):
 @patch('sys.exit')
 @patch('subprocess.run')
 def test_remove_worktree_force(mock_run, mock_exit):
+    """
+    Tests that `remove_worktree` includes the --force flag when removing a worktree.
+    """
     mock_result = MagicMock()
     mock_result.returncode = 0
     mock_run.return_value = mock_result
@@ -123,6 +158,9 @@ def test_remove_worktree_force(mock_run, mock_exit):
 @patch('sys.exit')
 @patch('subprocess.run')
 def test_prune_worktrees(mock_run, mock_exit, mock_logger):
+    """
+    Tests that `prune_worktrees` calls git worktree prune.
+    """
     mock_result = MagicMock()
     mock_result.returncode = 0
     mock_run.return_value = mock_result
@@ -137,6 +175,9 @@ def test_prune_worktrees(mock_run, mock_exit, mock_logger):
 
 @patch('main.logger')
 def test_run_cmd_type_error(mock_logger):
+    """
+    Tests that `run_cmd` handles invalid argument types.
+    """
     with pytest.raises(SystemExit) as e:
         main.run_cmd("not a list")
     assert e.value.code == 1
@@ -145,6 +186,9 @@ def test_run_cmd_type_error(mock_logger):
 @patch('subprocess.run')
 @patch('main.logger')
 def test_run_cmd_file_not_found(mock_logger, mock_run):
+    """
+    Tests that `run_cmd` logs a file not found error if the executable is missing.
+    """
     mock_run.side_effect = FileNotFoundError()
     with pytest.raises(SystemExit) as e:
         main.run_cmd(["non_existent_command"])
@@ -154,6 +198,9 @@ def test_run_cmd_file_not_found(mock_logger, mock_run):
 @patch('subprocess.run')
 @patch('main.logger')
 def test_run_cmd_general_exception(mock_logger, mock_run):
+    """
+    Tests that `run_cmd` gracefully handles general exceptions from subprocess.
+    """
     mock_run.side_effect = Exception("General error")
     with pytest.raises(SystemExit) as e:
         main.run_cmd(["git", "status"])
@@ -163,6 +210,9 @@ def test_run_cmd_general_exception(mock_logger, mock_run):
 @patch('subprocess.run')
 @patch('main.logger')
 def test_list_worktrees_empty(mock_logger, mock_run):
+    """
+    Tests that `list_worktrees` outputs an info message if no worktrees are found.
+    """
     mock_result = MagicMock()
     mock_result.returncode = 0
     mock_result.stdout = ""
@@ -174,6 +224,9 @@ def test_list_worktrees_empty(mock_logger, mock_run):
 
 @patch('main.logger')
 def test_add_worktree_invalid_path(mock_logger):
+    """
+    Tests that `add_worktree` raises a system exit for invalid paths.
+    """
     args = MockArgs(path=None, branch="branch")
     with pytest.raises(SystemExit) as e:
         main.add_worktree(args)
@@ -182,6 +235,9 @@ def test_add_worktree_invalid_path(mock_logger):
 
 @patch('main.logger')
 def test_add_worktree_invalid_branch(mock_logger):
+    """
+    Tests that `add_worktree` raises a system exit for invalid branch names.
+    """
     args = MockArgs(path="path", branch=123)
     with pytest.raises(SystemExit) as e:
         main.add_worktree(args)
@@ -190,6 +246,9 @@ def test_add_worktree_invalid_branch(mock_logger):
 
 @patch('main.logger')
 def test_remove_worktree_invalid_path(mock_logger):
+    """
+    Tests that `remove_worktree` raises a system exit for invalid paths.
+    """
     args = MockArgs(path=None, force=False)
     with pytest.raises(SystemExit) as e:
         main.remove_worktree(args)
@@ -199,6 +258,9 @@ def test_remove_worktree_invalid_path(mock_logger):
 @patch('main.list_worktrees')
 @patch('argparse.ArgumentParser.parse_args')
 def test_main_list(mock_parse_args, mock_list_worktrees):
+    """
+    Tests that the main argument parsing logic dispatches to the correct command.
+    """
     mock_args = MagicMock()
     mock_args.command = 'list'
     mock_args.func = mock_list_worktrees
