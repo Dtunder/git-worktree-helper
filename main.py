@@ -4,14 +4,29 @@ import os
 import sys
 
 def run_cmd(cmd, capture_output=True):
-    result = subprocess.run(cmd, capture_output=capture_output, text=True)
-    if result.returncode != 0 and capture_output:
-        print(result.stderr, file=sys.stderr)
-        sys.exit(result.returncode)
-    return result
+    if not isinstance(cmd, list):
+        print("Error: Command must be a list of strings.", file=sys.stderr)
+        sys.exit(1)
+        
+    try:
+        result = subprocess.run(cmd, capture_output=capture_output, text=True)
+        if result.returncode != 0 and capture_output:
+            print(result.stderr, file=sys.stderr)
+            sys.exit(result.returncode)
+        return result
+    except FileNotFoundError:
+        print(f"Error: Command '{cmd[0]}' not found.", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        print(f"Error running command: {e}", file=sys.stderr)
+        sys.exit(1)
 
 def list_worktrees(args):
     result = run_cmd(['git', 'worktree', 'list', '--porcelain'])
+    if not result or not hasattr(result, 'stdout') or not result.stdout:
+        print("No worktrees found or failed to list worktrees.")
+        return
+
     lines = result.stdout.splitlines()
     
     worktrees = []
@@ -49,31 +64,46 @@ def list_worktrees(args):
 
 def add_worktree(args):
     path = args.path
+    if not path or not isinstance(path, str):
+        print("Error: Path must be a non-empty string.", file=sys.stderr)
+        sys.exit(1)
+
     cmd = ['git', 'worktree', 'add']
     if args.branch:
+        if not isinstance(args.branch, str):
+            print("Error: Branch must be a string.", file=sys.stderr)
+            sys.exit(1)
         cmd.extend(['-b', args.branch])
     else:
         # Automatic branch creation based on basename
         basename = os.path.basename(os.path.abspath(path))
+        if not basename:
+            print("Error: Could not determine basename from path.", file=sys.stderr)
+            sys.exit(1)
         cmd.extend(['-b', basename])
     
     cmd.append(path)
     
-    # We might want to stream output to the user instead of capturing
-    result = subprocess.run(cmd, text=True)
+    # Stream output to the user instead of capturing
+    result = run_cmd(cmd, capture_output=False)
     sys.exit(result.returncode)
 
 def remove_worktree(args):
+    path = args.path
+    if not path or not isinstance(path, str):
+        print("Error: Path must be a non-empty string.", file=sys.stderr)
+        sys.exit(1)
+
     cmd = ['git', 'worktree', 'remove']
     if args.force:
         cmd.append('--force')
-    cmd.append(args.path)
-    result = subprocess.run(cmd, text=True)
+    cmd.append(path)
+    result = run_cmd(cmd, capture_output=False)
     sys.exit(result.returncode)
 
 def prune_worktrees(args):
     cmd = ['git', 'worktree', 'prune']
-    result = subprocess.run(cmd, text=True)
+    result = run_cmd(cmd, capture_output=False)
     if result.returncode == 0:
         print("Pruned stale worktrees successfully.")
     sys.exit(result.returncode)
