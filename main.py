@@ -2,8 +2,19 @@ import argparse
 import subprocess
 import os
 import sys
+from typing import List, Dict
 
-def run_cmd(cmd, capture_output=True):
+def run_cmd(cmd: List[str], capture_output: bool = True) -> subprocess.CompletedProcess:
+    """
+    Executes a shell command via subprocess.
+    
+    Args:
+        cmd: A list of strings representing the command and its arguments.
+        capture_output: Whether to capture standard output and standard error.
+        
+    Returns:
+        A CompletedProcess instance containing the command results.
+    """
     if not isinstance(cmd, list):
         print("Error: Command must be a list of strings.", file=sys.stderr)
         sys.exit(1)
@@ -21,18 +32,24 @@ def run_cmd(cmd, capture_output=True):
         print(f"Error running command: {e}", file=sys.stderr)
         sys.exit(1)
 
-def list_worktrees(args):
+def list_worktrees(args: argparse.Namespace) -> None:
+    """
+    Lists git worktrees in a formatted markdown table.
+    
+    Args:
+        args: Parsed command-line arguments.
+    """
     result = run_cmd(['git', 'worktree', 'list', '--porcelain'])
     if not result or not hasattr(result, 'stdout') or not result.stdout:
         print("No worktrees found or failed to list worktrees.")
         return
 
-    lines = result.stdout.splitlines()
+    worktrees: List[Dict[str, str]] = []
+    current_wt: Dict[str, str] = {}
     
-    worktrees = []
-    current_wt = {}
-    for line in lines:
-        if not line.strip():
+    for line in result.stdout.splitlines():
+        line = line.strip()
+        if not line:
             if current_wt:
                 worktrees.append(current_wt)
                 current_wt = {}
@@ -47,7 +64,7 @@ def list_worktrees(args):
         elif key == 'HEAD':
             current_wt['head'] = value[:7]
         elif key == 'branch':
-            current_wt['branch'] = value.replace('refs/heads/', '')
+            current_wt['branch'] = value.removeprefix('refs/heads/') if hasattr(value, 'removeprefix') else value.replace('refs/heads/', '')
         elif key == 'detached':
             current_wt['branch'] = '(detached)'
     
@@ -62,7 +79,13 @@ def list_worktrees(args):
         branch = wt.get('branch', '')
         print(f"| {path} | {head} | {branch} |")
 
-def add_worktree(args):
+def add_worktree(args: argparse.Namespace) -> None:
+    """
+    Adds a new git worktree with automatic or specified branch creation.
+    
+    Args:
+        args: Parsed command-line arguments.
+    """
     path = args.path
     if not path or not isinstance(path, str):
         print("Error: Path must be a non-empty string.", file=sys.stderr)
@@ -88,7 +111,13 @@ def add_worktree(args):
     result = run_cmd(cmd, capture_output=False)
     sys.exit(result.returncode)
 
-def remove_worktree(args):
+def remove_worktree(args: argparse.Namespace) -> None:
+    """
+    Removes an existing git worktree.
+    
+    Args:
+        args: Parsed command-line arguments.
+    """
     path = args.path
     if not path or not isinstance(path, str):
         print("Error: Path must be a non-empty string.", file=sys.stderr)
@@ -101,14 +130,23 @@ def remove_worktree(args):
     result = run_cmd(cmd, capture_output=False)
     sys.exit(result.returncode)
 
-def prune_worktrees(args):
+def prune_worktrees(args: argparse.Namespace) -> None:
+    """
+    Prunes stale git worktrees.
+    
+    Args:
+        args: Parsed command-line arguments.
+    """
     cmd = ['git', 'worktree', 'prune']
     result = run_cmd(cmd, capture_output=False)
     if result.returncode == 0:
         print("Pruned stale worktrees successfully.")
     sys.exit(result.returncode)
 
-def main():
+def main() -> None:
+    """
+    Main entry point for parsing arguments and dispatching commands.
+    """
     parser = argparse.ArgumentParser(description="A wrapper for standard git worktree commands.")
     subparsers = parser.add_subparsers(dest='command', required=True)
     
