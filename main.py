@@ -2,7 +2,29 @@ import argparse
 import subprocess
 import os
 import sys
+import logging
+import json
 from typing import List, Dict
+
+logger = logging.getLogger(__name__)
+
+class JSONFormatter(logging.Formatter):
+    def format(self, record):
+        log_record = {
+            "timestamp": self.formatTime(record, self.datefmt),
+            "level": record.levelname,
+            "name": record.name,
+            "message": record.getMessage()
+        }
+        if record.exc_info:
+            log_record["exc_info"] = self.formatException(record.exc_info)
+        return json.dumps(log_record)
+
+def setup_logging():
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setFormatter(JSONFormatter())
+    logger.addHandler(handler)
+    logger.setLevel(logging.DEBUG)
 
 def run_cmd(cmd: List[str], capture_output: bool = True) -> subprocess.CompletedProcess:
     """
@@ -16,20 +38,21 @@ def run_cmd(cmd: List[str], capture_output: bool = True) -> subprocess.Completed
         A CompletedProcess instance containing the command results.
     """
     if not isinstance(cmd, list):
-        print("Error: Command must be a list of strings.", file=sys.stderr)
+        logger.error("Error: Command must be a list of strings.")
         sys.exit(1)
         
     try:
+        logger.debug(f"Running command: {' '.join(cmd)}")
         result = subprocess.run(cmd, capture_output=capture_output, text=True)
         if result.returncode != 0 and capture_output:
-            print(result.stderr, file=sys.stderr)
+            logger.error(f"Command failed with stderr: {result.stderr.strip() if result.stderr else ''}")
             sys.exit(result.returncode)
         return result
     except FileNotFoundError:
-        print(f"Error: Command '{cmd[0]}' not found.", file=sys.stderr)
+        logger.error(f"Error: Command '{cmd[0]}' not found.")
         sys.exit(1)
     except Exception as e:
-        print(f"Error running command: {e}", file=sys.stderr)
+        logger.error(f"Error running command: {e}")
         sys.exit(1)
 
 def list_worktrees(args: argparse.Namespace) -> None:
@@ -39,9 +62,10 @@ def list_worktrees(args: argparse.Namespace) -> None:
     Args:
         args: Parsed command-line arguments.
     """
+    logger.info("Listing git worktrees")
     result = run_cmd(['git', 'worktree', 'list', '--porcelain'])
     if not result or not hasattr(result, 'stdout') or not result.stdout:
-        print("No worktrees found or failed to list worktrees.")
+        logger.info("No worktrees found or failed to list worktrees.")
         return
 
     worktrees: List[Dict[str, str]] = []
@@ -87,22 +111,25 @@ def add_worktree(args: argparse.Namespace) -> None:
         args: Parsed command-line arguments.
     """
     path = args.path
+    logger.info(f"Adding worktree at path: {path}")
     if not path or not isinstance(path, str):
-        print("Error: Path must be a non-empty string.", file=sys.stderr)
+        logger.error("Error: Path must be a non-empty string.")
         sys.exit(1)
 
     cmd = ['git', 'worktree', 'add']
     if args.branch:
         if not isinstance(args.branch, str):
-            print("Error: Branch must be a string.", file=sys.stderr)
+            logger.error("Error: Branch must be a string.")
             sys.exit(1)
+        logger.debug(f"Using specified branch: {args.branch}")
         cmd.extend(['-b', args.branch])
     else:
         # Automatic branch creation based on basename
         basename = os.path.basename(os.path.abspath(path))
         if not basename:
-            print("Error: Could not determine basename from path.", file=sys.stderr)
+            logger.error("Error: Could not determine basename from path.")
             sys.exit(1)
+        logger.debug(f"Using automatically determined branch: {basename}")
         cmd.extend(['-b', basename])
     
     cmd.append(path)
@@ -119,12 +146,14 @@ def remove_worktree(args: argparse.Namespace) -> None:
         args: Parsed command-line arguments.
     """
     path = args.path
+    logger.info(f"Removing worktree at path: {path}")
     if not path or not isinstance(path, str):
-        print("Error: Path must be a non-empty string.", file=sys.stderr)
+        logger.error("Error: Path must be a non-empty string.")
         sys.exit(1)
 
     cmd = ['git', 'worktree', 'remove']
     if args.force:
+        logger.debug("Force removal flag provided.")
         cmd.append('--force')
     cmd.append(path)
     result = run_cmd(cmd, capture_output=False)
@@ -137,16 +166,20 @@ def prune_worktrees(args: argparse.Namespace) -> None:
     Args:
         args: Parsed command-line arguments.
     """
+    logger.info("Pruning stale worktrees")
     cmd = ['git', 'worktree', 'prune']
     result = run_cmd(cmd, capture_output=False)
     if result.returncode == 0:
-        print("Pruned stale worktrees successfully.")
+        logger.info("Pruned stale worktrees successfully.")
+    else:
+        logger.error(f"Prune command exited with code {result.returncode}")
     sys.exit(result.returncode)
 
 def main() -> None:
     """
     Main entry point for parsing arguments and dispatching commands.
     """
+    setup_logging()
     parser = argparse.ArgumentParser(description="A wrapper for standard git worktree commands.")
     subparsers = parser.add_subparsers(dest='command', required=True)
     

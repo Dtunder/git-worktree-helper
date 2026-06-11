@@ -22,10 +22,10 @@ def test_run_cmd_success(mock_run):
     mock_run.assert_called_once_with(['git', 'status'], capture_output=True, text=True)
     assert result == mock_result
 
-@patch('sys.stderr')
+@patch('main.logger')
 @patch('sys.exit')
 @patch('subprocess.run')
-def test_run_cmd_failure(mock_run, mock_exit, mock_stderr):
+def test_run_cmd_failure(mock_run, mock_exit, mock_logger):
     mock_result = MagicMock()
     mock_result.returncode = 1
     mock_result.stderr = "error message"
@@ -34,6 +34,7 @@ def test_run_cmd_failure(mock_run, mock_exit, mock_stderr):
     main.run_cmd(['git', 'status'])
     mock_run.assert_called_once_with(['git', 'status'], capture_output=True, text=True)
     mock_exit.assert_called_once_with(1)
+    mock_logger.error.assert_called_with('Command failed with stderr: error message')
 
 @patch('subprocess.run')
 def test_list_worktrees(mock_run, capsys):
@@ -118,9 +119,10 @@ def test_remove_worktree_force(mock_run, mock_exit):
     mock_run.assert_called_once_with(['git', 'worktree', 'remove', '--force', '/path/to/wt'], capture_output=False, text=True)
     mock_exit.assert_called_once_with(0)
 
+@patch('main.logger')
 @patch('sys.exit')
 @patch('subprocess.run')
-def test_prune_worktrees(mock_run, mock_exit, capsys):
+def test_prune_worktrees(mock_run, mock_exit, mock_logger):
     mock_result = MagicMock()
     mock_result.returncode = 0
     mock_run.return_value = mock_result
@@ -131,33 +133,36 @@ def test_prune_worktrees(mock_run, mock_exit, capsys):
     mock_run.assert_called_once_with(['git', 'worktree', 'prune'], capture_output=False, text=True)
     mock_exit.assert_called_once_with(0)
     
-    captured = capsys.readouterr()
-    assert "Pruned stale worktrees successfully." in captured.out
+    mock_logger.info.assert_any_call("Pruned stale worktrees successfully.")
 
-@patch('sys.stderr')
-def test_run_cmd_type_error(mock_stderr):
+@patch('main.logger')
+def test_run_cmd_type_error(mock_logger):
     with pytest.raises(SystemExit) as e:
         main.run_cmd("not a list")
     assert e.value.code == 1
+    mock_logger.error.assert_called_with("Error: Command must be a list of strings.")
 
 @patch('subprocess.run')
-@patch('sys.stderr')
-def test_run_cmd_file_not_found(mock_stderr, mock_run):
+@patch('main.logger')
+def test_run_cmd_file_not_found(mock_logger, mock_run):
     mock_run.side_effect = FileNotFoundError()
     with pytest.raises(SystemExit) as e:
         main.run_cmd(["non_existent_command"])
     assert e.value.code == 1
+    mock_logger.error.assert_called_with("Error: Command 'non_existent_command' not found.")
 
 @patch('subprocess.run')
-@patch('sys.stderr')
-def test_run_cmd_general_exception(mock_stderr, mock_run):
+@patch('main.logger')
+def test_run_cmd_general_exception(mock_logger, mock_run):
     mock_run.side_effect = Exception("General error")
     with pytest.raises(SystemExit) as e:
         main.run_cmd(["git", "status"])
     assert e.value.code == 1
+    mock_logger.error.assert_called_with("Error running command: General error")
 
 @patch('subprocess.run')
-def test_list_worktrees_empty(mock_run, capsys):
+@patch('main.logger')
+def test_list_worktrees_empty(mock_logger, mock_run):
     mock_result = MagicMock()
     mock_result.returncode = 0
     mock_result.stdout = ""
@@ -165,29 +170,31 @@ def test_list_worktrees_empty(mock_run, capsys):
 
     args = MockArgs()
     main.list_worktrees(args)
-    captured = capsys.readouterr()
-    assert "No worktrees found" in captured.out
+    mock_logger.info.assert_any_call("No worktrees found or failed to list worktrees.")
 
-@patch('sys.stderr')
-def test_add_worktree_invalid_path(mock_stderr):
+@patch('main.logger')
+def test_add_worktree_invalid_path(mock_logger):
     args = MockArgs(path=None, branch="branch")
     with pytest.raises(SystemExit) as e:
         main.add_worktree(args)
     assert e.value.code == 1
+    mock_logger.error.assert_called_with("Error: Path must be a non-empty string.")
 
-@patch('sys.stderr')
-def test_add_worktree_invalid_branch(mock_stderr):
+@patch('main.logger')
+def test_add_worktree_invalid_branch(mock_logger):
     args = MockArgs(path="path", branch=123)
     with pytest.raises(SystemExit) as e:
         main.add_worktree(args)
     assert e.value.code == 1
+    mock_logger.error.assert_called_with("Error: Branch must be a string.")
 
-@patch('sys.stderr')
-def test_remove_worktree_invalid_path(mock_stderr):
+@patch('main.logger')
+def test_remove_worktree_invalid_path(mock_logger):
     args = MockArgs(path=None, force=False)
     with pytest.raises(SystemExit) as e:
         main.remove_worktree(args)
     assert e.value.code == 1
+    mock_logger.error.assert_called_with("Error: Path must be a non-empty string.")
 
 @patch('main.list_worktrees')
 @patch('argparse.ArgumentParser.parse_args')
