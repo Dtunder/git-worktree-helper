@@ -4,7 +4,8 @@ import os
 import sys
 import logging
 import json
-from typing import List, Dict
+import time
+from typing import List, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -52,44 +53,81 @@ def setup_logging() -> None:
 
 
 def run_cmd(
-    cmd: List[str], capture_output: bool = True
+    cmd: List[str],
+    capture_output: bool = True,
+    retries: int = 0,
+    timeout: Optional[float] = None,
+    retry_delay: float = 1.0,
 ) -> subprocess.CompletedProcess:
     """
-    Executes a shell command via the subprocess module.
+    Executes a shell command via the subprocess module with retry and timeout support.
 
     This function wraps `subprocess.run` with error handling, logging, and type
     checking. It captures standard output and standard error by default, and
-    exits the program if the command fails (unless capture_output is False).
+    exits the program if the command fails after all retries (unless capture_output is False).
 
     Args:
         cmd (List[str]): A list of strings representing the command.
         capture_output (bool, optional): Whether to capture stdout and stderr.
+        retries (int, optional): Number of times to retry on failure.
+        timeout (Optional[float], optional): Timeout for the command in seconds.
+        retry_delay (float, optional): Delay between retries in seconds.
 
     Returns:
         subprocess.CompletedProcess: A CompletedProcess instance.
 
     Raises:
         SystemExit: If `cmd` is not a list, if the command is not found,
-            or if the command fails and capture_output is True.
+            or if the command fails after all retries and capture_output is True.
     """
     if not isinstance(cmd, list):
         logger.error("Error: Command must be a list of strings.")
         sys.exit(1)
 
-    try:
-        logger.debug(f"Running command: {' '.join(cmd)}")
-        result = subprocess.run(cmd, capture_output=capture_output, text=True)
-        if result.returncode != 0 and capture_output:
-            err = result.stderr.strip() if result.stderr else ""
-            logger.error(f"Command failed with stderr: {err}")
-            sys.exit(result.returncode)
-        return result
-    except FileNotFoundError:
-        logger.error(f"Error: Command '{cmd[0]}' not found.")
-        sys.exit(1)
-    except Exception as e:
-        logger.error(f"Error running command: {e}")
-        sys.exit(1)
+    attempts = 0
+    while attempts <= retries:
+        try:
+            logger.debug(f"Running command (attempt {attempts + 1}/{retries + 1}): {' '.join(cmd)}")
+            result = subprocess.run(
+                cmd, capture_output=capture_output, text=True, timeout=timeout
+            )
+            if result.returncode != 0:
+                err = result.stderr.strip() if hasattr(result, "stderr") and result.stderr else ""
+                logger.warning(f"Command failed with code {result.returncode}. Stderr: {err}")
+                if attempts < retries:
+                    logger.info(f"Retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                    attempts += 1
+                    continue
+                if capture_output:
+                    logger.error(f"Command permanently failed after {retries + 1} attempts with stderr: {err}")
+                    sys.exit(result.returncode)
+            return result
+        except FileNotFoundError:
+            logger.error(f"Error: Command '{cmd[0]}' not found.")
+            sys.exit(1)
+        except subprocess.TimeoutExpired as e:
+            logger.warning(f"Command timed out after {timeout} seconds.")
+            if attempts < retries:
+                logger.info(f"Retrying in {retry_delay} seconds...")
+                time.sleep(retry_delay)
+                attempts += 1
+                continue
+            logger.error(f"Command permanently failed (timeout) after {retries + 1} attempts.")
+            sys.exit(1)
+        except Exception as e:
+            logger.warning(f"Error running command: {e}")
+            if attempts < retries:
+                logger.info(f"Retrying in {retry_delay} seconds...")
+                time.sleep(retry_delay)
+                attempts += 1
+                continue
+            logger.error(f"Command permanently failed after {retries + 1} attempts due to error: {e}")
+            sys.exit(1)
+    
+    # This shouldn't be reached, but fallback just in case
+    logger.error("Unexpected execution path in run_cmd")
+    sys.exit(1)
 
 
 def list_worktrees(args: argparse.Namespace) -> None:

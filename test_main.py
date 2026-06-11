@@ -1,5 +1,6 @@
 import pytest
 import argparse
+import subprocess
 from unittest.mock import patch, MagicMock
 from typing import Any
 
@@ -56,12 +57,109 @@ def test_run_cmd_failure(
 
     main.run_cmd(["git", "status"])
     mock_run.assert_called_once_with(
-        ["git", "status"], capture_output=True, text=True
+        ["git", "status"], capture_output=True, text=True, timeout=None
     )
     mock_exit.assert_called_once_with(1)
     mock_logger.error.assert_called_with(
-        "Command failed with stderr: error message"
+        "Command permanently failed after 1 attempts with stderr: error message"
     )
+
+
+@patch("time.sleep")
+@patch("subprocess.run")
+def test_run_cmd_timeout_retry_success(
+    mock_run: MagicMock, mock_sleep: MagicMock
+) -> None:
+    """
+    Tests that `run_cmd` retries after a timeout and succeeds.
+    """
+    mock_result_success = MagicMock()
+    mock_result_success.returncode = 0
+    mock_run.side_effect = [
+        subprocess.TimeoutExpired(cmd=["git", "status"], timeout=5.0),
+        mock_result_success,
+    ]
+
+    result = main.run_cmd(
+        ["git", "status"], retries=1, timeout=5.0, retry_delay=1.0
+    )
+    
+    assert mock_run.call_count == 2
+    mock_sleep.assert_called_once_with(1.0)
+    assert result == mock_result_success
+
+
+@patch("time.sleep")
+@patch("main.logger")
+@patch("sys.exit")
+@patch("subprocess.run")
+def test_run_cmd_timeout_failure(
+    mock_run: MagicMock,
+    mock_exit: MagicMock,
+    mock_logger: MagicMock,
+    mock_sleep: MagicMock,
+) -> None:
+    """
+    Tests that `run_cmd` exits after all retries fail due to timeout.
+    """
+    mock_run.side_effect = subprocess.TimeoutExpired(cmd=["git", "status"], timeout=5.0)
+
+    main.run_cmd(["git", "status"], retries=1, timeout=5.0, retry_delay=1.0)
+    
+    assert mock_run.call_count == 2
+    mock_sleep.assert_called_once_with(1.0)
+    mock_exit.assert_called_once_with(1)
+    mock_logger.error.assert_called_with(
+        "Command permanently failed (timeout) after 2 attempts."
+    )
+
+
+@patch("time.sleep")
+@patch("subprocess.run")
+def test_run_cmd_failure_retry_success(
+    mock_run: MagicMock, mock_sleep: MagicMock
+) -> None:
+    """
+    Tests that `run_cmd` retries after a non-zero return code and succeeds.
+    """
+    mock_result_fail = MagicMock()
+    mock_result_fail.returncode = 1
+    mock_result_fail.stderr = "error"
+    
+    mock_result_success = MagicMock()
+    mock_result_success.returncode = 0
+    
+    mock_run.side_effect = [mock_result_fail, mock_result_success]
+
+    result = main.run_cmd(
+        ["git", "status"], retries=1, retry_delay=1.0
+    )
+    
+    assert mock_run.call_count == 2
+    mock_sleep.assert_called_once_with(1.0)
+    assert result == mock_result_success
+
+
+@patch("time.sleep")
+@patch("subprocess.run")
+def test_run_cmd_exception_retry_success(
+    mock_run: MagicMock, mock_sleep: MagicMock
+) -> None:
+    """
+    Tests that `run_cmd` retries after a general exception and succeeds.
+    """
+    mock_result_success = MagicMock()
+    mock_result_success.returncode = 0
+    
+    mock_run.side_effect = [Exception("Some error"), mock_result_success]
+
+    result = main.run_cmd(
+        ["git", "status"], retries=1, retry_delay=1.0
+    )
+    
+    assert mock_run.call_count == 2
+    mock_sleep.assert_called_once_with(1.0)
+    assert result == mock_result_success
 
 
 @patch("subprocess.run")
